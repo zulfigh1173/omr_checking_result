@@ -1,2 +1,5 @@
-streamlit
-pillows
+# Scanned from omr_final_accurate.py
+# Imports found: streamlit, PIL, csv, io, re
+# External = 2 only | csv, io, re = Python ke andar hi hain
+streamlit==1.40.2
+Pillow==11.0.0
