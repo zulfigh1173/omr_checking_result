@@ -13,12 +13,13 @@ from reportlab.lib.units import mm
 
 st.set_page_config(layout="wide")
 st.title("OMR - 100% Accurate - AUTO 100/100 - Tilt Fix")
+st.markdown("### Turab Scholars Academy Ratodero")
 
 # ===== STUDENT NAME INPUT =====
 st.subheader("👤 Student Details")
 c_name, c_roll, c_class = st.columns(3)
 with c_name:
-    student_name = st.text_input("Student Name", placeholder="e.g. Ali Khan")
+    student_name = st.text_input("Student Name", placeholder="e.g. 【entity-Ali Khan¦canonical_name=Ali Khan】")
 with c_roll:
     roll_no = st.text_input("Roll No / Seat No", placeholder="e.g. 101")
 with c_class:
@@ -34,6 +35,8 @@ marks_per_q = st.sidebar.number_input("Marks per Correct", value=1)
 negative_mark = st.sidebar.slider("Negative Marking", 0.0, 1.0, 0.0)
 pass_marks = st.sidebar.number_input("Pass Marks", value=50)
 auto_tune = st.sidebar.checkbox("AUTO Tune to 100/100", value=True)
+
+ACADEMY = "Turab Scholars Academy Ratodero"
 
 def parse_key(key_file):
     text = key_file.read().decode("utf-8", errors="ignore")
@@ -119,19 +122,72 @@ def find_blobs(img, orig_h, blue_low, min_area, merge_dist):
             filled.append(c)
     return filled, blue_mask
 
+def make_excel(student_name, roll_no, student_class, total_marks, total_possible, correct, wrong, blank, percentage, grade, result_status, results):
+    """Excel banao - Top pe Academy + Student + Marks Count + Detail"""
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+        # Top header rows
+        header_rows = [
+            [ACADEMY],
+            ["OMR RESULT CARD"],
+            [""],
+            ["Student Name", student_name if student_name else "-"],
+            ["Roll No / Seat No", roll_no if roll_no else "-"],
+            ["Class / Subject", student_class if student_class else "-"],
+            ["Date", datetime.now().strftime("%d-%m-%Y %I:%M %p")],
+            [""],
+            ["Total Questions", 100],
+            ["Correct", f"{correct} x {marks_per_q} = {correct*marks_per_q:.1f} marks"],
+            ["Wrong", f"{wrong} x -{negative_mark} = {-wrong*negative_mark:.1f} marks"],
+            ["Blank", f"{blank} x 0 = 0 marks"],
+            ["Total Obtained Marks", f"{total_marks:.1f} / {total_possible}"],
+            ["Percentage", f"{percentage:.1f}%"],
+            ["Pass Marks", pass_marks],
+            ["Grade", grade],
+            ["Result", result_status],
+            [""],
+            ["Q", "Student", "Key", "Result", "Marks"],
+        ]
+        for r in results:
+            header_rows.append([r["Q"], r["Student"], r["Key"], r["Result"], r["Marks"]])
+        df = pd.DataFrame(header_rows)
+        df.to_excel(writer, index=False, header=False, sheet_name="Result")
+        ws = writer.sheets["Result"]
+        ws.column_dimensions['A'].width = 22
+        ws.column_dimensions['B'].width = 18
+        ws.column_dimensions['C'].width = 12
+        ws.column_dimensions['D'].width = 14
+        ws.column_dimensions['E'].width = 12
+        # Academy naam bold + bara
+        from openpyxl.styles import Font, Alignment, PatternFill
+        ws['A1'].font = Font(bold=True, size=16, color="1A4D8F")
+        ws['A1'].alignment = Alignment(horizontal='center')
+        ws.merge_cells('A1:E1')
+        ws['A2'].font = Font(bold=True, size=12)
+        ws['A2'].alignment = Alignment(horizontal='center')
+        ws.merge_cells('A2:E2')
+        ws['A17'].font = Font(bold=True, color="FFFFFF")
+        ws['A17'].fill = PatternFill("solid", fgColor="4472C4")
+        for col in ['A','B','C','D','E']:
+            ws[f'{col}17'].font = Font(bold=True, color="FFFFFF")
+            ws[f'{col}17'].fill = PatternFill("solid", fgColor="4472C4")
+    buf.seek(0)
+    return buf.getvalue()
+
 def make_pdf(student_name, roll_no, student_class, total_marks, total_possible, correct, wrong, blank, percentage, grade, result_status, results, marked_img_bytes):
-    """PDF banao - Name + Marks + Full Table + Marked Sheet"""
     buf = BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=15*mm, bottomMargin=15*mm, leftMargin=15*mm, rightMargin=15*mm)
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle('Title2', parent=styles['Title'], fontSize=18, spaceAfter=4)
+    academy_style = ParagraphStyle('Academy', parent=styles['Title'], fontSize=20, textColor=colors.HexColor("#1A4D8F"), spaceAfter=2)
+    title_style = ParagraphStyle('Title2', parent=styles['Title'], fontSize=16, spaceAfter=4)
     h2 = ParagraphStyle('H2', parent=styles['Heading2'], fontSize=13, spaceBefore=10, spaceAfter=6)
     normal = styles['Normal']
     story = []
+    # TOP PE ACADEMY NAME
+    story.append(Paragraph(ACADEMY, academy_style))
     story.append(Paragraph("OMR RESULT CARD", title_style))
     story.append(Paragraph(f"Date: {datetime.now().strftime('%d-%m-%Y %I:%M %p')}", normal))
     story.append(Spacer(1, 6))
-    # Summary Table
     summary_data = [
         ["Student Name", student_name if student_name else "-"],
         ["Roll No", roll_no if roll_no else "-"],
@@ -158,22 +214,19 @@ def make_pdf(student_name, roll_no, student_class, total_marks, total_possible, 
     ]))
     story.append(t1)
     story.append(Paragraph("Detail - Q | Student | Key | Result | Marks", h2))
-    # Detail table - 2 columns me 50-50 taake 1 page me aaye
     header = ["Q", "Student", "Key", "Result", "Marks"]
     detail_rows = [header]
     for r in results:
         detail_rows.append([str(r["Q"]), r["Student"], r["Key"], r["Result"], f"{r['Marks']}"])
-    # 50 + 50 split
     left = detail_rows[:51]
     right = [header] + detail_rows[51:]
-    # Dono ko side by side ek table me
     combined = []
     for i in range(max(len(left), len(right))):
         l = left[i] if i < len(left) else ["", "", "", "", ""]
         r = right[i] if i < len(right) else ["", "", "", "", ""]
         combined.append(l + [""] + r)
     t2 = Table(combined, colWidths=[10*mm, 15*mm, 10*mm, 18*mm, 12*mm, 4*mm, 10*mm, 15*mm, 10*mm, 18*mm, 12*mm])
-    style_cmds = [
+    t2.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (4, 0), colors.HexColor("#4472C4")),
         ('BACKGROUND', (6, 0), (-1, 0), colors.HexColor("#4472C4")),
         ('TEXTCOLOR', (0, 0), (4, 0), colors.white),
@@ -184,10 +237,8 @@ def make_pdf(student_name, roll_no, student_class, total_marks, total_possible, 
         ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.lightgrey),
         ('TOPPADDING', (0, 0), (-1, -1), 2),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-    ]
-    t2.setStyle(TableStyle(style_cmds))
+    ]))
     story.append(t2)
-    # Marked sheet image - agar hai to
     if marked_img_bytes is not None:
         story.append(Paragraph("Marked Sheet - Green = Correct, Red = Wrong", h2))
         try:
@@ -201,7 +252,7 @@ def make_pdf(student_name, roll_no, student_class, total_marks, total_possible, 
 
 if uploaded_file is not None:
     if not student_name:
-        st.warning("⚠️ Pehle oopar Student Name likhein.")
+        st.warning("⚠ Pehle oopar Student Name likhein.")
     file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
     img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
     orig_h, orig_w = img.shape[:2]
@@ -380,12 +431,12 @@ if uploaded_file is not None:
         st.subheader("Answers END to START (100 → 1)")
         st.write(", ".join(list(reversed(ans_list))))
 
-        # ===== FINAL RESULT TABLE =====
         st.divider()
         st.subheader("🏆 FINAL RESULT TABLE - Marks Count")
         result_status = "PASS ✅" if total_marks >= pass_marks else "FAIL ❌"
         grade = "A+" if percentage >= 80 else "A" if percentage >= 70 else "B" if percentage >= 60 else "C" if percentage >= 50 else "D" if percentage >= 40 else "F"
         final_summary = pd.DataFrame([
+            {"Detail": "Academy", "Value": ACADEMY},
             {"Detail": "Student Name", "Value": student_name if student_name else "-"},
             {"Detail": "Roll No / Seat No", "Value": roll_no if roll_no else "-"},
             {"Detail": "Class / Subject", "Value": student_class if student_class else "-"},
@@ -404,31 +455,24 @@ if uploaded_file is not None:
         st.subheader("📋 Detail Table - Student vs Key - Marks Count")
         st.dataframe(pd.DataFrame(results), use_container_width=True, hide_index=True)
 
-        # ===== DOWNLOAD SECTION =====
+        # ===== DOWNLOAD - JPG REMOVED, SIRF EXCEL + PDF =====
         st.divider()
         st.subheader("⬇️ Download Result")
         safe_name = (student_name.replace(' ', '_') if student_name else 'Student')
         safe_roll = (roll_no if roll_no else 'Result')
         base = f"{safe_name}_{safe_roll}"
 
-        # 1. Marked Image bytes
         _, marked_buf = cv2.imencode(".png", img_marked)
         marked_bytes = marked_buf.tobytes()
-
-        # 2. CSV bytes
-        csv_bytes = pd.DataFrame(results).to_csv(index=False).encode('utf-8')
-
-        # 3. PDF bytes
+        excel_bytes = make_excel(student_name, roll_no, student_class, total_marks, total_possible, correct, wrong, blank, percentage, grade, result_status, results)
         pdf_bytes = make_pdf(student_name, roll_no, student_class, total_marks, total_possible, correct, wrong, blank, percentage, grade, result_status, results, marked_bytes)
 
-        d1, d2, d3 = st.columns(3)
+        d1, d2 = st.columns(2)
         with d1:
-            st.download_button("⬇️ Download CSV", data=csv_bytes, file_name=f"{base}_Result.csv", mime="text/csv", use_container_width=True)
+            st.download_button("⬇️ Download Excel (.xlsx)", data=excel_bytes, file_name=f"{base}_Result.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
         with d2:
-            st.download_button("⬇️ Download Marked Sheet (PNG)", data=marked_bytes, file_name=f"{base}_Marked_Sheet.png", mime="image/png", use_container_width=True)
-        with d3:
             st.download_button("⬇️ Download Result PDF", data=pdf_bytes, file_name=f"{base}_Result.pdf", mime="application/pdf", use_container_width=True)
 
-        st.info(f"**{student_name if student_name else 'Student'} | Roll: {roll_no if roll_no else '-'} | Marks: {total_marks:.1f}/{total_possible} | {result_status} | {percentage:.1f}%**")
+        st.info(f"**{ACADEMY} | {student_name if student_name else 'Student'} | Roll: {roll_no if roll_no else '-'} | Marks: {total_marks:.1f}/{total_possible} | {result_status} | {percentage:.1f}%**")
     else:
         st.error("No blue found!")
