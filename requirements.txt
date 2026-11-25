@@ -1,2 +1,9 @@
-streamlit==1.49.1
-Pillow==11.3.0
+# OMR App - Requirements
+# Install: pip install -r requirements.txt
+# Run: streamlit run app.py
+
+streamlit>=1.32.0
+opencv-python-headless>=4.9.0
+numpy>=1.26.0
+pandas>=2.2.0
+reportlab>=4.1.0
